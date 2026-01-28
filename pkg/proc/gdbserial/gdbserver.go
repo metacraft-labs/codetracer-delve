@@ -1163,7 +1163,15 @@ func (p *gdbProcess) When() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(event), nil
+	event = strings.TrimSpace(event)
+
+	// CodeTracer extension: query tick count so the backend can extract it
+	// from State().When. Gracefully degrades if when-ticks is unavailable.
+	ticks, ticksErr := p.conn.qRRCmd("when-ticks")
+	if ticksErr == nil {
+		event = event + "\n" + strings.TrimSpace(ticks)
+	}
+	return event, nil
 }
 
 const (
