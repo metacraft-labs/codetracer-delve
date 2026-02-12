@@ -208,6 +208,17 @@ func checkRRAvailable() error {
 		return &ErrBackendUnavailable{}
 	}
 
+	// When rr is invoked with -W (software counters mode), it does not use
+	// hardware performance counters at all, so the perf_event_paranoid
+	// sysctl is irrelevant. The -W flag is communicated via the
+	// DELVE_RR_RECORD_FLAGS or DELVE_RR_REPLAY_FLAGS environment variables.
+	// We check both because this function gates both Record and Replay.
+	// Reference: https://github.com/rr-debugger/rr/issues/2862
+	if strings.Contains(os.Getenv(delveRecordFlagsEnvVar), "-W") ||
+		strings.Contains(os.Getenv(delveReplayFlagsEnvVar), "-W") {
+		return nil
+	}
+
 	// Check that /proc/sys/kernel/perf_event_paranoid doesn't exist or is <= 1.
 	buf, err := os.ReadFile("/proc/sys/kernel/perf_event_paranoid")
 	if err == nil {
