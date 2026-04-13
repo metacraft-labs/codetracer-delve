@@ -82,6 +82,8 @@ var (
 	// rootCommand is the root of the command tree.
 	rootCommand *cobra.Command
 
+	rspAddr string
+
 	traceAttachPid     int
 	traceExecFile      string
 	traceTestBinary    bool
@@ -451,6 +453,29 @@ https://github.com/mozilla/rr
 		must(replayCommand.RegisterFlagCompletionFunc("onprocess", cobra.NoFileCompletions))
 		rootCommand.AddCommand(replayCommand)
 	}
+
+	replayRspCommand := &cobra.Command{
+		Use:   "replay-rsp addr [binary]",
+		Short: "Connect to an existing GDB RSP debug server.",
+		Long: `Connect to an existing GDB RSP debug server (e.g. MCR debugserver).
+The first argument is the address (host:port). The optional second argument
+is the binary path for debug symbols.`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 1 {
+				return errors.New("you must provide an RSP server address (host:port)")
+			}
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			rspAddr = args[0]
+			var processArgs []string
+			if len(args) > 1 {
+				processArgs = []string{args[1]}
+			}
+			os.Exit(execute(0, processArgs, conf, "", debugger.ExecutingOther, args, ""))
+		},
+	}
+	rootCommand.AddCommand(replayRspCommand)
 
 	rootCommand.AddCommand(&cobra.Command{
 		Use:   "backend",
@@ -1150,6 +1175,7 @@ func execute(attachPid int, processArgs []string, conf *config.Config, coreFile 
 				AttachWaitFor:         attachWaitFor,
 				AttachWaitForInterval: attachWaitForInterval,
 				AttachWaitForDuration: attachWaitForDuration,
+				RspAddr:               rspAddr,
 			},
 		})
 	default:

@@ -159,6 +159,9 @@ type Config struct {
 
 	RrOnProcessPid int
 	RrDelOnDetach  bool
+
+	// RspAddr is the address of an existing GDB RSP server to connect to.
+	RspAddr string
 }
 
 // New creates a new Debugger. ProcessArgs specify the commandline arguments for the
@@ -172,6 +175,19 @@ func New(config *Config, processArgs []string) (*Debugger, error) {
 	}
 
 	// Create the process by either attaching or launching.
+	if d.config.RspAddr != "" {
+		binaryPath := ""
+		if len(processArgs) > 0 {
+			binaryPath = processArgs[0]
+		}
+		var err error
+		d.target, err = gdbserial.ConnectToRSP(d.config.RspAddr, binaryPath, d.config.DebugInfoDirectories)
+		if err != nil {
+			return nil, err
+		}
+		return d, nil
+	}
+
 	switch {
 	case d.config.AttachPid > 0 || d.config.AttachWaitFor != "":
 		d.log.Infof("attaching to pid %d", d.config.AttachPid)

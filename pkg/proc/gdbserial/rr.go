@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -187,6 +188,35 @@ func Replay(tracedir string, quiet, deleteOnDetach bool, debugInfoDirs []string,
 	tgt, err := p.Dial(init.port, init.exe, cmdline, 0, debugInfoDirs, proc.StopLaunched)
 	if err != nil {
 		rrcmd.Process.Kill()
+		return nil, err
+	}
+
+	return tgt, nil
+}
+
+// ConnectToRSP connects to an existing GDB Remote Serial Protocol server
+// (such as MCR's debugserver). Unlike Replay, this does not spawn rr.
+func ConnectToRSP(addr string, binaryPath string, debugInfoDirs []string) (*proc.TargetGroup, error) {
+	if addr == "" {
+		return nil, fmt.Errorf("empty RSP address")
+	}
+
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		portStr = addr
+		addr = "127.0.0.1:" + addr
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port in address %q: %v", addr, err)
+	}
+	_ = port // port is embedded in addr for Dial
+
+	p := newProcess(nil)
+	p.conn.useXcmd = false
+
+	tgt, err := p.Dial(addr, binaryPath, "", 0, debugInfoDirs, proc.StopAttached)
+	if err != nil {
 		return nil, err
 	}
 
