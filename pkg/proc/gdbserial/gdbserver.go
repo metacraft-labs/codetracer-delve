@@ -1167,7 +1167,12 @@ func (p *gdbProcess) When() (string, error) {
 
 	// CodeTracer extension: query tick count so the backend can extract it
 	// from State().When. Gracefully degrades if when-ticks is unavailable.
-	ticks, ticksErr := p.conn.qRRCmd("when-ticks")
+	// Ticks are counted per task, so the command names the selected thread.
+	// Without it rr answers for its last 'Hg' query thread, i.e. whichever
+	// thread Delve last read registers from, so the same position could
+	// report different tick counts (for example before and after restarting
+	// from a checkpoint).
+	ticks, ticksErr := p.conn.qRRCmdForThread(p.currentThread, "when-ticks")
 	if ticksErr == nil {
 		event = event + "\n" + strings.TrimSpace(ticks)
 	}

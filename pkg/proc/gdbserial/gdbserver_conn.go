@@ -1192,17 +1192,46 @@ func (conn *gdbConn) restart(pos string) error {
 
 // qRRCmd executes a qRRCmd command
 func (conn *gdbConn) qRRCmd(args ...string) (string, error) {
+	return conn.qRRCmdForThread(nil, args...)
+}
+
+// qRRCmdForThread executes a qRRCmd command whose answer depends on which
+// thread it is asked about, such as rr's "when-ticks", which reports the tick
+// count of a single task.
+//
+// With th == nil the command carries thread id -1, which rr resolves to the
+// task of the stub's last 'Hg' (query thread) selection: whichever thread
+// Delve last read registers from, not necessarily the selected thread. That
+// is harmless for session-wide commands such as "when" or "checkpoint", but a
+// per-thread command must name its thread, so th's id is sent instead. rr
+// parses the post-5.8.0 packet "qRRCmd:<name>:<tid>[:<arg>...]" in
+// GdbServerConnection::process_packet (src/GdbServerConnection.cc) and looks
+// the tid up in DebuggerExtensionCommandHandler::process_command
+// (src/DebuggerExtensionCommandHandler.cc), see
+// https://github.com/rr-debugger/rr. Older rr versions have no thread field,
+// so for them the thread is selected with 'Hg' first.
+func (conn *gdbConn) qRRCmdForThread(th *gdbThread, args ...string) (string, error) {
 	if len(args) == 0 {
 		panic("must specify at least one argument for qRRCmd")
+	}
+	newStyle := conn.newRRCmdStyle || conn.threadSuffixSupported
+	if th != nil && !newStyle {
+		if err := conn.selectThread('g', th.strID, "qRRCmd"); err != nil {
+			return "", err
+		}
 	}
 	conn.outbuf.Reset()
 	fmt.Fprint(&conn.outbuf, "$qRRCmd")
 	for i, arg := range args {
 		fmt.Fprint(&conn.outbuf, ":")
-		if i == 0 && (conn.newRRCmdStyle || conn.threadSuffixSupported) {
+		if i == 0 && newStyle {
 			// newer versions of RR require the command to be followed by a thread id
 			// and the command name to be unescaped.
-			fmt.Fprintf(&conn.outbuf, "%s:-1", arg)
+			tid := -1
+			if th != nil {
+				tid = th.ID
+			}
+			fmt.Fprintf(&conn.outbuf, "%s:%d", arg, tid)
 		} else {
 			writeAsciiBytes(&conn.outbuf, []byte(arg))
 		}
