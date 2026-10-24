@@ -223,41 +223,26 @@ func ConnectToRSP(addr string, binaryPath string, debugInfoDirs []string) (*proc
 	return tgt, nil
 }
 
-// ErrPerfEventParanoid is the error returned by Reply and Record if
-// /proc/sys/kernel/perf_event_paranoid is greater than 1.
-type ErrPerfEventParanoid struct {
-	actual int
-}
-
-func (err ErrPerfEventParanoid) Error() string {
-	return fmt.Sprintf("rr needs /proc/sys/kernel/perf_event_paranoid <= 1, but it is %d", err.actual)
-}
-
+// checkRRAvailable reports whether rr can be started at all, i.e. whether it
+// is on PATH. It gates both Record and Replay.
+//
+// It deliberately does NOT preflight /proc/sys/kernel/perf_event_paranoid.
+// Upstream Delve refuses to start when that sysctl is above 1, but rr does not
+// need it to be: rr counts user-space events only, which the kernel permits at
+// paranoid level 2, the default on most distributions. rr itself raises "rr
+// needs /proc/sys/kernel/perf_event_paranoid <= 1" (ContextSwitchEvent.cc, on
+// the record path, after its own fallback has failed) in the one case where the
+// sysctl really is the obstacle, and that message reaches the caller through
+// rr's stderr. A second, stricter copy of the decision here refused hosts on
+// which rr records and replays without trouble, and it refused them before rr
+// ran, so Delve's refusal was the only diagnostic anyone saw. The software
+// counter mode (-W) exemption this check used to carry is unnecessary for the
+// same reason.
+// Reference: https://github.com/rr-debugger/rr/blob/master/src/ContextSwitchEvent.cc
 func checkRRAvailable() error {
 	if _, err := exec.LookPath("rr"); err != nil {
 		return &ErrBackendUnavailable{}
 	}
-
-	// When rr is invoked with -W (software counters mode), it does not use
-	// hardware performance counters at all, so the perf_event_paranoid
-	// sysctl is irrelevant. The -W flag is communicated via the
-	// DELVE_RR_RECORD_FLAGS or DELVE_RR_REPLAY_FLAGS environment variables.
-	// We check both because this function gates both Record and Replay.
-	// Reference: https://github.com/rr-debugger/rr/issues/2862
-	if strings.Contains(os.Getenv(delveRecordFlagsEnvVar), "-W") ||
-		strings.Contains(os.Getenv(delveReplayFlagsEnvVar), "-W") {
-		return nil
-	}
-
-	// Check that /proc/sys/kernel/perf_event_paranoid doesn't exist or is <= 1.
-	buf, err := os.ReadFile("/proc/sys/kernel/perf_event_paranoid")
-	if err == nil {
-		perfEventParanoid, _ := strconv.Atoi(strings.TrimSpace(string(buf)))
-		if perfEventParanoid > 1 {
-			return ErrPerfEventParanoid{perfEventParanoid}
-		}
-	}
-
 	return nil
 }
 
